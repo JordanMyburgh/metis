@@ -1,0 +1,39 @@
+.layout-cache.json
+.loadout-cache.json
+.activity-cache.json
+node_modules/
+
+# Hermes session shims — written live by the Hermes metis plugin, replayed by
+# RecallTracker. Ephemeral working data, never source.
+.hermes-transcripts/
+
+
+# Secrets — real values live in C:\AI\.env (outside every repo). Never commit one.
+.env
+.env.*
+!.env.example
+
+# FileSystem backbone + the file-access diagnostic log. Live working data:
+# the graph is a picture of THIS machine, the log is a record of THIS session.
+.fs-graph.json
+logs/
+.aider*
+.rg-path.json
+
+# The desk — Jordan's own notes, his running timer, his schedule. Personal working
+# state for THIS machine, and the notes are his writing, not this project's source.
+.desk.json
+
+# Roadmap progress — which phases are ticked. Personal working state for this
+# machine, same as the desk. The curriculum itself (data/roadmap.json) IS source.
+.roadmap.json
+
+# Which todo-list revision each session was last told about. Rewritten on every
+# prompt, one entry per session id — runtime state, not source.
+.todo-rev-cache.json
+
+# Machine-local config written by setup.mjs -- paths for THIS machine, never source.
+metis.config.json
+
+# GUI-tuned layout physics -- presentation state, not source.
+.layout-params.json

@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metis</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="application-name" content="Metis">
+<meta name="theme-color" content="#050508">
+<meta name="color-scheme" content="dark">
+<style>
+:root{
+  --void:#050508; --ink:#0a0a0f; --line:#1a2436; --line2:#2a3850;
+  --mist:#c8c8d0; --dim:#8b93a5; --faint:#4a5568; --bright:#eaf4ff;
+  --amber:#f2b85c; --cyan:#22ccff; --green:#54e6a6; --violet:#b888ff;
+  --magenta:#ff4d9d; --gold:#ffd27a; --red:#ff3344;
+  --mono: ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  --glass: linear-gradient(180deg, rgba(10,14,26,.78), rgba(5,6,10,.86));
+  --glass-line: rgba(120,160,210,.16);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--void);color:var(--mist);font:12px/1.5 var(--mono);overflow:hidden}
+/* The canvas MUST size from a wrapper. A bare `width:auto` on <canvas> resolves to
+   its own width ATTRIBUTE, so writing the attribute in resize() grows the element,
+   which re-triggers resize — a runaway that pins the canvas at 33.5M px. */
+#stage{position:fixed;top:0;left:0;right:0;bottom:0;overflow:hidden;background:var(--void)}
+#cv{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cv:active{cursor:grabbing}
+
+/* ---- bracket-framed chrome, per the reference ---- */
+.frame{position:relative;padding:5px 12px;color:var(--mist);font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.frame::before,.frame::after{content:'';position:absolute;top:0;bottom:0;width:7px;
+  border:1px solid var(--line2)}
+.frame::before{left:0;border-right:none}
+.frame::after{right:0;border-left:none}
+.frame.hot{color:var(--amber)}
+.frame.hot::before,.frame.hot::after{border-color:var(--amber);box-shadow:0 0 10px rgba(242,184,92,.35)}
+
+#top{position:fixed;top:0;left:0;right:0;height:34px;display:flex;align-items:center;
+  gap:8px;padding:0 14px;z-index:10;pointer-events:none}
+#top > *{pointer-events:auto}
+#top .sp{flex:1}
+/* The pose readout makes a screenshot self-describing: camera + canvas size are in
+   the frame, so a position on screen can be inverted to world coordinates. */
+#pose{position:fixed;bottom:13px;right:14px;z-index:9;
+  font-size:9.5px;letter-spacing:.10em;color:var(--faint);pointer-events:none;
+  font-family:var(--mono);white-space:nowrap}
+#pose b{color:var(--green);letter-spacing:.20em}
+#top .wordmark{font-size:11px;letter-spacing:.34em;color:var(--bright);font-weight:600;
+  padding-right:4px;border-right:1px solid var(--line2);margin-right:2px}
+
+.tag{font-size:9.5px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
+.tag b{color:var(--mist);font-weight:500}
+
+#hud{position:fixed;left:14px;top:44px;width:250px;z-index:9;display:flex;flex-direction:column;gap:3px;pointer-events:none;overflow:hidden}
+.ev{background:var(--glass);border:1px solid var(--glass-line);border-radius:4px;padding:4px 8px;
+  font-size:9.5px;color:var(--mist);backdrop-filter:blur(10px);animation:ein .28s ease-out}
+.ev b{color:var(--cyan);font-weight:500}.ev em{color:var(--faint);font-style:normal}
+@keyframes ein{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+#legend{position:fixed;right:14px;top:44px;z-index:9;background:var(--glass);
+  border:1px solid var(--glass-line);border-radius:6px;padding:8px 10px;backdrop-filter:blur(10px)}
+#legend div{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--mist);padding:1px 0}
+#legend i{width:7px;height:7px;flex:0 0 auto}
+#legend span{color:var(--faint);margin-left:auto;padding-left:12px}
+
+/* ---- key: what every mark on the canvas means ---- */
+#key{position:fixed;left:14px;bottom:14px;z-index:9;width:290px;background:var(--glass);
+  border:1px solid var(--glass-line);border-radius:7px;backdrop-filter:blur(12px);
+  padding:9px 11px 10px;display:none}
+#key.on{display:block}
+#forces{position:fixed;left:320px;bottom:14px;z-index:9;width:280px;background:var(--glass);
+  border:1px solid var(--glass-line);border-radius:7px;backdrop-filter:blur(12px);
+  padding:9px 11px 10px;display:none}
+#forces.on{display:block}
+#forces h3{margin:0 0 7px;font-size:9px;letter-spacing:.22em;text-transform:uppercase;
+  display:flex;align-items:center}
+#forces h3 button{margin-left:auto;padding:1px 6px;font-size:9px;letter-spacing:0}
+.fr-row{display:grid;grid-template-columns:86px 1fr 44px;gap:6px;align-items:center;margin:5px 0;font-size:10px}
+.fr-row input{width:100%}
+.fr-row span{text-align:right;opacity:.8;font-variant-numeric:tabular-nums}
+.fr-actions{display:flex;gap:6px;align-items:center;margin-top:8px}
+.fr-actions #fr-note{font-size:9px;opacity:.65;margin-left:auto}
+body.chron #forces{bottom:122px}
+#key h3{margin:0 0 7px;font-size:9px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--faint);font-weight:500;display:flex;align-items:center}
+#key h3 button{margin-left:auto;padding:1px 6px;font-size:9px;letter-spacing:0}
+#key dl{margin:0;display:grid;grid-template-columns:38px 1fr;gap:5px 9px;align-items:center}
+#key dt{display:flex;align-items:center;justify-content:center;height:14px}
+#key dd{margin:0;font-size:9.5px;line-height:1.45;color:var(--mist)}
+#key dd b{color:var(--bright);font-weight:500}
+#key dd i{color:var(--faint);font-style:normal}
+
+#tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--glass);
+  border:1px solid var(--glass-line);border-radius:5px;padding:6px 9px;font-size:10.5px;
+  color:var(--bright);backdrop-filter:blur(12px);white-space:nowrap;z-index:20}
+#tip .m{color:var(--faint);font-size:9.5px;display:block;margin-top:2px}
+
+/* Shared control styling — the top bar's buttons and the session picker. These
+   lived inside the chat block; they are not chat-specific and must outlive it. */
+select,button{font:inherit;font-size:9.5px;color:var(--mist);background:rgba(255,255,255,.04);
+  border:1px solid var(--line2);border-radius:5px;padding:4px 8px;cursor:pointer}
+button:hover,select:hover{border-color:var(--cyan);color:var(--cyan)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,select:focus-visible{outline:1px solid var(--cyan);outline-offset:2px}
+/* Attached = a SessionStart hook told Metis which conversation to watch. */
+#t-mode{color:var(--faint)}
+#t-mode.on{color:var(--cyan);border-color:var(--cyan)}
+
+/* ---- chronicle: when each note was added, updated, last accessed ---- */
+#chron{position:fixed;left:0;right:0;bottom:0;height:108px;z-index:8;background:var(--glass);
+  border-top:1px solid var(--glass-line);backdrop-filter:blur(12px);display:none;
+  flex-direction:column;padding:6px 14px 4px}
+#chron.on{display:flex}
+#chron header{display:flex;align-items:center;gap:10px;height:15px;font-size:9px;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--faint)}
+#chron header .ttl{color:var(--mist);font-weight:500}
+#chron header .sp{flex:1}
+#chron header .rng{display:flex;gap:3px}
+#chron header .rng button{padding:1px 7px;font-size:9px;letter-spacing:.1em;border-radius:4px}
+#chron header .rng button.on{color:var(--void);background:var(--mist);border-color:var(--mist)}
+#chron header button{padding:1px 7px;font-size:9px}
+#ch-focus{color:var(--bright);letter-spacing:.05em;text-transform:none;font-size:9.5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+#ch-focus b{color:var(--cyan);font-weight:500}
+#ch-focus i{font-style:normal;color:var(--faint)}
+#ch-wrap{flex:1;position:relative;min-height:0}
+#chcv{width:100%;height:100%;display:block;cursor:crosshair}
+/* the ribbon owns the bottom edge while it is open, so the other two move up */
+body.chron #key{bottom:122px}
+body.chron #pose{bottom:121px}
+
+/* ---- desk: scratch notes, the focus timer, the day's schedule ----
+   Left rail, mid-height. Its vertical placement is set from JS (placeDesk) rather
+   than in CSS: the key panel's height is not a constant, and hard-coding a gap that
+   is right at 1440p leaves the two panels overlapping at 1080p. */
+#desk{position:fixed;left:14px;top:50%;transform:translateY(-50%);width:290px;z-index:9;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:7px;
+  backdrop-filter:blur(12px);padding:9px 11px 10px;display:none;flex-direction:column;gap:9px;
+  max-height:min(60vh,500px);overflow:hidden}
+#desk.on{display:flex}
+#desk h3{margin:0;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;display:flex;align-items:center;gap:8px}
+#desk h3 .sp{flex:1}
+#desk h3 button{padding:1px 6px;font-size:9px;letter-spacing:0}
+#dk-saved{letter-spacing:.05em;text-transform:none;font-size:9px;color:var(--faint)}
+#dk-priv{font-size:9px;color:var(--faint);letter-spacing:.05em}
+#dk-saved.ok{color:var(--green)}
+
+/* ---- the shared todo list ----
+   Cyan is the colour that means "Claude" everywhere else on this map, so the shared
+   list wears it and the private notes box does not. That is the whole visual contract:
+   anything cyan-edged, both of us can see. */
+#dk-todos .lbl{color:var(--cyan)}
+#dk-tcount{font-size:9px;color:var(--faint);letter-spacing:.05em}
+#dk-tlist{list-style:none;margin:0;padding:0;flex:1 1 auto;min-height:0;overflow-y:auto;
+  display:flex;flex-direction:column;gap:2px}
+#dk-tlist li{display:flex;align-items:flex-start;gap:6px;font-size:9.5px;color:var(--mist);
+  padding:3px 5px;border-radius:4px;background:rgba(34,204,255,.06);
+  border-left:2px solid rgba(34,204,255,.45)}
+#dk-tlist li.byclaude{border-left-color:var(--amber);background:rgba(242,184,92,.07)}
+#dk-tlist li.done{opacity:.42;border-left-color:var(--faint);background:rgba(255,255,255,.03)}
+#dk-tlist li.done span{text-decoration:line-through}
+#dk-tlist li span{flex:1;line-height:1.45;word-break:break-word}
+#dk-tlist li button{padding:0 5px;font-size:10px;line-height:1.3;border-color:var(--line);flex:0 0 auto}
+#dk-tlist li em{font-style:normal;color:var(--amber);font-size:8.5px;letter-spacing:.08em;flex:0 0 auto}
+/* the generic #desk input rule would give a checkbox 3px of padding and a 0 width */
+#desk input[type=checkbox]{padding:0;width:11px;height:11px;flex:0 0 auto;margin:1px 0 0;
+  accent-color:var(--cyan);cursor:pointer}
+#dk-tnew{flex:1}
+#dk-empty{font-size:9.5px;color:var(--faint)}
+
+/* Notes and todos are two pages of one sliding track — swipe like a photo carousel
+   (drag follows the pointer, rubber-bands past the ends, snaps at 20% of the width)
+   or use the ‹ › button on each page. The pager owns the desk's slack; both pages
+   stretch to its height so the slide never changes the desk's size. Default page is
+   todos; .page-notes is the resting position one screen to the left. */
+#dk-pager{flex:1 1 auto;min-height:0;overflow:hidden}
+#dk-track{display:flex;height:100%;touch-action:pan-y;
+  transition:transform .28s cubic-bezier(.22,.61,.36,1)}
+#dk-track.drag{transition:none}
+#desk #dk-track>section{flex:0 0 100%;min-width:0;border-top:none;padding-top:0}
+#desk.page-notes #dk-track{transform:translateX(-100%)}
+#desk .dk-flip{padding:1px 6px;font-size:10px;letter-spacing:0;flex:0 0 auto;color:var(--cyan)}
+
+/* The first section sits directly under the header, so it must not draw a divider. */
+#desk section:first-of-type{border-top:none;padding-top:0}
+/* The notes page's height comes from the track stretch (the pager owns the slack).
+   overflow:hidden + a modest textarea minimum: when the desk is squeezed the box
+   clips at its own section instead of painting over focus/schedule below it. */
+#desk section.notes{min-height:0;gap:4px;overflow:hidden}
+#dk-notes{flex:1 1 auto;min-height:60px;resize:none;width:100%;background:rgba(255,255,255,.03);
+  border:1px solid var(--line);border-radius:5px;color:var(--mist);font:inherit;font-size:10.5px;
+  line-height:1.55;padding:7px 8px}
+#dk-notes:focus{outline:none;border-color:var(--cyan)}
+#dk-notes::placeholder{color:var(--faint)}
+
+#desk section{display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line);padding-top:8px}
+#desk .row{display:flex;align-items:center;gap:6px}
+#desk .row .sp{flex:1}
+#desk .lbl{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
+#desk input{font:inherit;font-size:9.5px;color:var(--mist);background:rgba(255,255,255,.04);
+  border:1px solid var(--line2);border-radius:5px;padding:3px 6px;min-width:0}
+#desk input:focus{outline:none;border-color:var(--cyan)}
+#desk button{padding:3px 7px}
+#desk button.pri{color:var(--amber);border-color:var(--amber)}
+
+/* The clock is the one number you read from across the room, so it is the only
+   thing on this panel bigger than 11px. */
+#dk-clock{font-size:16px;letter-spacing:.06em;color:var(--faint);font-variant-numeric:tabular-nums}
+#desk.run #dk-clock{color:var(--amber)}
+#desk.done #dk-clock{color:var(--green)}
+#dk-what2{color:var(--mist);font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dk-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+#dk-bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .5s linear}
+#desk.done #dk-bar i{background:var(--green)}
+#dk-presets button{flex:1;padding:3px 0;font-size:9.5px}
+#dk-label{flex:1.6}
+
+#dk-next{font-size:9.5px;color:var(--mist);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dk-next b{color:var(--cyan);font-weight:500}
+#dk-list{list-style:none;margin:0;padding:0;max-height:78px;overflow-y:auto;display:flex;
+  flex-direction:column;gap:2px}
+#dk-list li{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--mist);
+  padding:2px 4px;border-radius:4px;background:rgba(255,255,255,.03)}
+#dk-list li b{color:var(--gold);font-weight:500;font-variant-numeric:tabular-nums}
+#dk-list li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dk-list li i{color:var(--faint);font-style:normal}
+#dk-list li button{padding:0 5px;font-size:10px;line-height:1.3;border-color:var(--line)}
+#dk-add-at{width:64px}
+#dk-add-min{width:44px}
+#dk-add-what{flex:1}
+
+/* ---- models: what is eating the card ----
+   Shares the roadmap's slot on the right rail — the two toggle like tabs, because
+   they answer different-day questions ("where am I in the plan" vs "why is my GPU
+   full") and never need to be read together. Amber, the tools colour: a model in
+   VRAM is machinery, not curriculum. */
+#models{position:fixed;right:14px;top:340px;width:334px;z-index:9;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:7px;
+  backdrop-filter:blur(12px);padding:9px 11px 10px;display:none;flex-direction:column;gap:8px;
+  max-height:min(74vh,660px)}
+#models.on{display:flex}
+#models h3{margin:0;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;display:flex;align-items:center;gap:8px}
+#models h3 .sp{flex:1}
+#models h3 button{padding:1px 6px;font-size:9px;letter-spacing:0}
+#md-gpu{display:flex;flex-direction:column;gap:4px}
+#md-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+#md-bar i{display:block;height:100%;width:0;background:var(--amber,#f2b85c);transition:width .4s ease}
+/* past ~90% the bar goes red: that is the spill line, the exact thing the panel exists to show */
+#md-bar i.hot{background:#ff5d5d}
+#md-vram{font-size:9px;color:var(--faint);letter-spacing:.04em}
+#md-list{list-style:none;margin:0;padding:0;overflow-y:auto;display:flex;
+  flex-direction:column;gap:3px;min-height:0}
+#md-list li{border-radius:5px;background:rgba(242,184,92,.05);
+  border-left:2px solid rgba(242,184,92,.35);padding:5px 7px;
+  display:flex;flex-direction:column;gap:3px}
+#md-list li.live{background:rgba(242,184,92,.12);border-left-color:var(--amber,#f2b85c)}
+/* spilled = resident but partly in system RAM. The one state that deserves alarm colour. */
+#md-list li.spill{border-left-color:#ff5d5d}
+.md-row{display:flex;align-items:center;gap:7px;font-size:9.5px;color:var(--mist)}
+.md-name{flex:1;word-break:break-all;line-height:1.3}
+.md-size{font-size:8.5px;color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.md-sub{display:flex;align-items:center;gap:7px;font-size:8.5px;color:var(--faint)}
+.md-sub .grow{flex:1}
+.md-sub button{padding:1px 6px;font-size:8.5px;letter-spacing:0}
+#md-note{font-size:8.5px;color:var(--faint);line-height:1.4}
+
+/* ---- goals: always in sight ----
+   Top of the left rail, immovable by request: no toggle, no close, and everything
+   else on the rail (feed, desk) anchors below its measured bottom so nothing can
+   cover it. z-index above the other panels as insurance for transient states.
+   Gold: a prize, not a task — no network owns this colour, so goals never read as
+   belonging to any island. */
+#goals{position:fixed;left:14px;top:52px;width:334px;z-index:11;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:7px;
+  backdrop-filter:blur(12px);padding:9px 11px 10px;display:flex;flex-direction:column;gap:7px;
+  max-height:min(52vh,520px)}
+#goals h3{margin:0;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;display:flex;align-items:center;gap:8px}
+#goals h3 .sp{flex:1}
+#gl-upd{letter-spacing:.05em;text-transform:none;font-size:9px;color:var(--gold)}
+#gl-body{overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:3px}
+.gl-h{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-top:6px}
+.gl-h:first-child{margin-top:0}
+.gl-i{font-size:10.5px;line-height:1.5;color:var(--mist);padding-left:10px;position:relative}
+.gl-i::before{content:'·';position:absolute;left:1px;color:var(--gold)}
+
+/* ---- roadmap: the long game ----
+   Right rail, because the desk owns the left one and these two get read together:
+   "what am I doing today" beside "where does today sit in the nine months".
+   Violet, not cyan: cyan means the shared todo list, and a curriculum is neither a
+   todo nor a thing Claude writes to. Taller than the desk — it has to hold six
+   phases, and a roadmap you have to scroll to see the end of is a roadmap you
+   stop opening. */
+/* top is a CSS fallback only — placeRoad() sets it from the legend's real height,
+   which changes with the number of categories. Same reason placeDesk exists. */
+#road{position:fixed;right:14px;top:340px;width:334px;z-index:9;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:7px;
+  backdrop-filter:blur(12px);padding:9px 11px 10px;display:none;flex-direction:column;gap:8px;
+  max-height:min(74vh,660px)}
+#road.on{display:flex}
+#road h3{margin:0;font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;display:flex;align-items:center;gap:8px}
+#road h3 .sp{flex:1}
+#road h3 button{padding:1px 6px;font-size:9px;letter-spacing:0}
+#rd-pct{letter-spacing:.05em;text-transform:none;font-size:9px;color:var(--violet)}
+
+/* Overall progress. One bar, always visible, above the fold — the single number
+   that answers "am I actually moving" without expanding anything. */
+#rd-top{display:flex;flex-direction:column;gap:4px}
+#rd-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+#rd-bar i{display:block;height:100%;width:0;background:var(--violet);transition:width .4s ease}
+#rd-budget{font-size:9px;color:var(--faint);letter-spacing:.04em}
+
+#rd-list{list-style:none;margin:0;padding:0;overflow-y:auto;display:flex;
+  flex-direction:column;gap:3px;min-height:0}
+
+/* A phase is a header you click and a body that unfolds. Collapsed by default except
+   the current one: six phases fully expanded is 40 lines of curriculum, which is the
+   document he already has — the panel's job is to show him the ONE phase he is on. */
+#rd-list li.ph{border-radius:5px;background:rgba(184,136,255,.05);
+  border-left:2px solid rgba(184,136,255,.4);overflow:hidden}
+#rd-list li.ph.cur{background:rgba(184,136,255,.11);border-left-color:var(--violet)}
+#rd-list li.ph.done{border-left-color:var(--green);background:rgba(84,230,166,.06)}
+.rd-head{display:flex;align-items:center;gap:7px;padding:5px 7px;cursor:pointer;
+  font-size:9.5px;color:var(--mist)}
+.rd-head:hover{background:rgba(255,255,255,.03)}
+.rd-n{font-size:8.5px;color:var(--violet);letter-spacing:.1em;flex:0 0 auto;
+  font-variant-numeric:tabular-nums}
+li.ph.done .rd-n{color:var(--green)}
+.rd-t{flex:1;line-height:1.35;word-break:break-word}
+.rd-cnt{font-size:8.5px;color:var(--faint);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.rd-wk{font-size:8.5px;color:var(--faint);letter-spacing:.04em;flex:0 0 auto}
+.rd-body{display:none;padding:0 7px 7px;flex-direction:column;gap:5px}
+li.ph.open .rd-body{display:flex}
+.rd-goal{font-size:9px;color:var(--dim);line-height:1.5}
+.rd-items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.rd-items li{display:flex;align-items:flex-start;gap:6px;font-size:9.5px;color:var(--mist);
+  padding:3px 5px;border-radius:4px;background:rgba(255,255,255,.03);line-height:1.45}
+.rd-items li span{flex:1;word-break:break-word}
+.rd-items li.done{opacity:.42}
+.rd-items li.done span{text-decoration:line-through}
+/* The cold gate is the only item that proves anything. It gets amber and it gets to
+   look different from the reading list above it. */
+.rd-items li.gate{background:rgba(242,184,92,.08);border-left:2px solid var(--amber)}
+.rd-items li.project{background:rgba(34,204,255,.06);border-left:2px solid rgba(34,204,255,.45)}
+.rd-items li.gate.done{border-left-color:var(--green);background:rgba(84,230,166,.06)}
+/* Every item row opens its instructions. The whole row is the target, not a link
+   buried in it — at 9.5px a text link is a coin toss. */
+.rd-items li{cursor:pointer}
+.rd-items li:hover{background:rgba(255,255,255,.07)}
+.rd-items li .go{color:var(--faint);flex:0 0 auto;font-size:10px}
+.rd-items li:hover .go{color:var(--violet)}
+
+/* The status marker replaced a checkbox on 2026-08-24. It is deliberately NOT an
+   input: nothing on this panel is settable by hand any more. Hollow = not attempted,
+   amber number = marked but under the pass mark, green tick = passed. */
+.rd-mk{flex:0 0 auto;width:14px;height:14px;margin-top:1px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;
+  border:1px solid var(--faint);color:var(--faint);font-variant-numeric:tabular-nums}
+.rd-mk.pass{border-color:var(--green);background:rgba(84,230,166,.18);color:var(--green)}
+.rd-mk.fail{border-color:var(--amber);background:rgba(242,184,92,.16);color:var(--amber)}
+#rd-lock{font-size:8.5px;color:var(--faint);letter-spacing:.03em;line-height:1.5;
+  border-top:1px solid var(--line);padding-top:6px}
+
+/* ---- the instructions screen ----
+   A panel 334px wide cannot hold a brief, and a brief you have to squint at is one
+   you do not read before starting. So it opens over the graph instead. */
+#brief{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;
+  background:rgba(3,4,8,.72);backdrop-filter:blur(3px);padding:24px}
+#brief.on{display:flex}
+#brief-card{width:min(660px,100%);max-height:84vh;overflow-y:auto;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:9px;
+  padding:18px 20px 20px;display:flex;flex-direction:column;gap:13px}
+#brief-head{display:flex;align-items:flex-start;gap:10px}
+#brief-kind{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;padding:2px 6px;
+  border-radius:3px;border:1px solid var(--violet);color:var(--violet);flex:0 0 auto;margin-top:2px}
+#brief-kind.gate{border-color:var(--amber);color:var(--amber)}
+#brief-kind.project{border-color:var(--cyan);color:var(--cyan)}
+#brief-title{flex:1;font-size:13px;line-height:1.45;color:var(--bright);font-weight:500}
+#brief-phase{font-size:9px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase}
+#brief-close{flex:0 0 auto;padding:2px 8px;font-size:10px}
+#brief h4{margin:0;font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--violet);font-weight:500}
+#brief section{display:flex;flex-direction:column;gap:6px}
+#brief p{margin:0;font-size:11.5px;line-height:1.65;color:var(--mist)}
+#brief ol,#brief ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+#brief li{font-size:11px;line-height:1.6;color:var(--mist)}
+#brief section.scored h4{color:var(--amber)}
+#brief section.done h4{color:var(--green)}
+#brief .rd-links{padding-top:2px}
+/* The mark, when there is one. Feedback sits with the work it is about, which is the
+   only place it is any use. */
+#brief-mark{display:none;flex-direction:column;gap:6px;padding:10px 12px;border-radius:6px;
+  background:rgba(255,255,255,.04);border-left:2px solid var(--faint)}
+#brief-mark.on{display:flex}
+#brief-mark.pass{border-left-color:var(--green)}
+#brief-mark.fail{border-left-color:var(--amber)}
+#brief-score{font-size:15px;color:var(--mist);font-variant-numeric:tabular-nums}
+#brief-mark.pass #brief-score{color:var(--green)}
+#brief-mark.fail #brief-score{color:var(--amber)}
+#brief-fb{font-size:11px;line-height:1.65;color:var(--mist);white-space:pre-wrap}
+#brief-when{font-size:8.5px;color:var(--faint);letter-spacing:.04em}
+#brief-how{font-size:10px;color:var(--faint);line-height:1.6;border-top:1px solid var(--line);
+  padding-top:10px}
+.rd-note{font-size:8.5px;color:var(--faint);line-height:1.5;padding-left:2px}
+.rd-links{display:flex;flex-wrap:wrap;gap:4px}
+.rd-links a{font-size:8.5px;color:var(--cyan);text-decoration:none;padding:2px 5px;
+  border:1px solid var(--line);border-radius:3px}
+.rd-links a:hover{border-color:var(--cyan)}
+#rd-src{font-size:8.5px;color:var(--faint);letter-spacing:.03em;word-break:break-all}
+
+/* ---- pad: the paste-anything tab ----
+   #brief's placement trick (fixed over the graph) but opaque, non-modal, and BELOW
+   it in z-order — with the top bar left exposed, so the button that opened the pad
+   is also the way back. That is the whole tab metaphor. Green, not cyan: cyan means
+   shared-with-Claude, and like the desk notes this text is Jordan's own. The file
+   itself is still greppable — private means not broadcast, not hidden.
+   Editor-sized type: 9.5px is for chrome, not for writing in. */
+#pad{position:fixed;inset:0;top:34px;z-index:30;display:none;background:var(--void);
+  flex-direction:column;align-items:center;padding:12px 16px 14px}
+#pad.on{display:flex}
+#pad .col{width:min(920px,100%);flex:1;display:flex;flex-direction:column;gap:8px;min-height:0}
+#pad header{display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--faint)}
+#pad header .ttl{color:var(--mist);font-weight:500}
+#pad header .sp{flex:1}
+#pad-file{letter-spacing:.03em;text-transform:none}
+#pad-count{letter-spacing:.05em;text-transform:none}
+#pad-saved{letter-spacing:.05em;text-transform:none}
+#pad-saved.ok{color:var(--green)}
+#pad-saved.err{color:var(--red)}
+#pad-ta{flex:1;width:100%;resize:none;background:var(--ink);border:1px solid var(--line2);
+  border-radius:8px;color:var(--bright);font:13px/1.7 var(--mono);padding:18px 20px;
+  caret-color:var(--green)}
+#pad-ta:focus{outline:none;border-color:var(--green)}
+#pad-ta::placeholder{color:var(--faint)}
+#padtoggle.on{color:var(--void);background:var(--green);border-color:var(--green)}
+#padtoggle.on:hover{color:var(--void)}
+
+/* The used-only filter is a real cull, so it says so on the top bar the whole time
+   it is on — a filtered graph that looks like the whole graph is a trap. */
+#usedtoggle.on{color:var(--void);background:var(--amber);border-color:var(--amber)}
+#usedtoggle.on:hover{color:var(--void)}
+#roadtoggle.on{color:var(--void);background:var(--violet);border-color:var(--violet)}
+#roadtoggle.on:hover{color:var(--void)}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<div id="top">
+  <span class="wordmark">METIS</span>
+  <span class="frame" id="f-graph">graph —</span>
+  <span class="frame" id="f-fire">idle</span>
+  <span class="sp"></span>
+  <span class="frame hot" id="f-live">briefing · live —</span>
+  <span class="sp"></span>
+  <span class="tag" id="t-sess">session —</span>
+  <span class="tag" id="t-mode" title="no SessionStart hook has reported yet">detached</span>
+  <button id="home" title="fit everything on screen (h)">home</button>
+  <button id="keytoggle" title="what the marks mean">key</button>
+  <button id="desktoggle" title="notes, focus timer, schedule (n)">desk</button>
+  <button id="padtoggle" title="the pad — a whole page to paste into, saved to C:\AI\Notes\scratchpad.md (p)">pad</button>
+  <button id="roadtoggle" title="the study roadmap — phases, projects, cold gates (r)">roadmap</button>
+  <button id="modelstoggle" title="local models — what's in VRAM, unload/warm (m)">models</button>
+  <button id="usedtoggle" title="show only what this session actually touched (u)">used</button>
+  <button id="forcestoggle" title="layout physics — repulsion, link pull, collision (f)">forces</button>
+  <button id="chrontoggle" title="when notes were added, updated, accessed (c)">chronicle</button>
+  <select id="sess" title="past session to review"></select>
+  <button id="replay">review</button>
+</div>
+
+<div id="pose"></div>
+<div id="hud"></div>
+<div id="legend"></div>
+
+<!-- Layout physics. Sliders map 1:1 onto lib/layout.mjs DEFAULT_FORCES; apply POSTs
+     /api/forces, the server recomputes the frozen layout once and the graph_changed
+     event repaints. Changing forces reshuffles the map BY DESIGN - it is the one
+     sanctioned reshuffle. -->
+<div id="forces">
+  <h3>Forces <button id="fr-close" type="button">hide</button></h3>
+  <div class="fr-row"><label>spread</label><input id="fr-spread" type="range" min="0.4" max="1.8" step="0.05"><span id="fr-spread-v">—</span></div>
+  <div class="fr-row"><label>repulsion</label><input id="fr-rep" type="range" min="0.5" max="60" step="0.5"><span id="fr-rep-v">—</span></div>
+  <div class="fr-row"><label>link pull</label><input id="fr-link" type="range" min="0.0005" max="0.08" step="0.0005"><span id="fr-link-v">—</span></div>
+  <div class="fr-row"><label>collide radius</label><input id="fr-crad" type="range" min="0" max="30" step="1"><span id="fr-crad-v">—</span></div>
+  <div class="fr-row"><label>collide strength</label><input id="fr-cstr" type="range" min="0" max="1" step="0.05"><span id="fr-cstr-v">—</span></div>
+  <div class="fr-actions"><button id="fr-apply" type="button">apply</button><button id="fr-reset" type="button">defaults</button><span id="fr-note"></span></div>
+</div>
+
+<!-- The goals. Content comes from the vault note knowledge/people/jordan-goals.md via
+     /api/goals — edit the note, not this file. Always on screen, by request: no toggle,
+     no close, and the rest of the left rail stacks BELOW it (placeDesk anchors to its
+     measured bottom), so nothing can cover it. -->
+<div id="goals">
+  <h3>Goals <span id="gl-upd">—</span><span class="sp"></span></h3>
+  <div id="gl-body"></div>
+</div>
+
+<div id="key" class="on">
+  <h3>Key <button id="keyclose" type="button">hide</button></h3>
+  <dl>
+    <dt><svg width="34" height="14"><circle cx="17" cy="7" r="4" fill="#22ccff"/></svg></dt>
+    <dd><b>Node</b> — a note, MCP server, skill or tool</dd>
+
+    <dt><svg width="34" height="14"><circle cx="9" cy="7" r="2" fill="#9db2c8"/><circle cx="24" cy="7" r="5.5" fill="#9db2c8"/></svg></dt>
+    <dd><b>Size</b> — link count <i>(vault)</i>, or gateway</dd>
+
+    <dt><svg width="34" height="14"><circle cx="7" cy="7" r="3.5" fill="#22ccff"/><circle cx="17" cy="7" r="3.5" fill="#54e6a6"/><circle cx="27" cy="7" r="3.5" fill="#b888ff"/></svg></dt>
+    <dd><b>Colour</b> — which network it belongs to</dd>
+
+    <dt><svg width="34" height="14"><circle cx="8" cy="7" r="2" fill="#b888ff"/><circle cx="13" cy="4" r="2" fill="#b888ff"/><circle cx="12" cy="11" r="2" fill="#b888ff"/><circle cx="27" cy="7" r="2" fill="#54e6a6"/></svg></dt>
+    <dd><b>Position</b> — which island; vault clusters by links</dd>
+
+    <dt><svg width="34" height="14"><line x1="3" y1="7" x2="31" y2="7" stroke="#aac3e6" stroke-width="1.2"/></svg></dt>
+    <dd><b>Solid link</b> — a real wikilink or dependency</dd>
+
+    <dt><svg width="34" height="14"><line x1="3" y1="7" x2="31" y2="7" stroke="#be6e8c" stroke-width="1.2" stroke-dasharray="3 4"/></svg></dt>
+    <dd><b>Dashed</b> — link to a note that <i>doesn't exist yet</i></dd>
+
+    <dt><svg width="34" height="14"><line x1="3" y1="7" x2="31" y2="7" stroke="#54e6a6" stroke-width="2.4" opacity=".75"/></svg></dt>
+    <dd><b>Backbone</b> — core → island gateway</dd>
+
+    <dt><svg width="34" height="14"><line x1="3" y1="7" x2="22" y2="7" stroke="#22ccff" stroke-width="1.5" opacity=".7"/><circle cx="26" cy="7" r="4.5" fill="#dff2ff"/></svg></dt>
+    <dd><b>Flare + trail</b> — a real tool call, as it happens</dd>
+
+    <dt><svg width="34" height="14"><circle cx="17" cy="7" r="5.5" fill="none" stroke="#ff3344" stroke-width="1.8"/><circle cx="17" cy="7" r="1.6" fill="#ff3344"/></svg></dt>
+    <dd><b>Core</b> — Claude; brighter while working</dd>
+
+    <dt><svg width="34" height="14"><rect x="3" y="5" width="3" height="6" fill="#22ccff"/><rect x="9" y="2" width="3" height="9" fill="#f2b85c"/><rect x="15" y="7" width="3" height="4" fill="#54e6a6"/><line x1="25" y1="1" x2="25" y2="12" stroke="#ff3344" stroke-width="1.2"/></svg></dt>
+    <dd><b>Chronicle</b> — when notes were accessed, updated, added <i>(c)</i></dd>
+  </dl>
+</div>
+<div id="desk">
+  <h3>Desk <span id="dk-saved">—</span><span class="sp"></span>
+    <button id="deskclose" type="button">hide</button></h3>
+
+  <!-- Instagram-style pager: both pages sit side by side on a sliding track. Swipe
+       (touch anywhere; mouse from a non-interactive spot) or the ‹ › buttons slide
+       between them; #desk.page-notes is the resting position. -->
+  <div id="dk-pager"><div id="dk-track">
+  <section id="dk-todos">
+    <div class="row">
+      <span class="lbl">Shared todos</span>
+      <span id="dk-tcount"></span>
+      <span class="sp"></span>
+      <button id="dk-tclear" type="button" title="remove the ticked ones">clear done</button>
+      <button class="dk-flip" type="button" title="swap to notes">‹ ›</button>
+    </div>
+    <ul id="dk-tlist"></ul>
+    <div id="dk-empty">nothing yet — Claude sees whatever you add here</div>
+    <div class="row">
+      <input id="dk-tnew" placeholder="add a todo — shared with Claude" maxlength="400">
+      <button id="dk-tadd" type="button">add</button>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div class="row"><span class="lbl">Notes</span><span id="dk-priv">private — yours only</span>
+      <span class="sp"></span>
+      <button class="dk-flip" type="button" title="swap to todos">‹ ›</button></div>
+    <textarea id="dk-notes" spellcheck="false"
+      placeholder="notes — saved to .desk.json, so a later session can read them"></textarea>
+  </section>
+  </div></div>
+
+  <section>
+    <div class="row">
+      <span class="lbl">Focus</span>
+      <span id="dk-clock">--:--</span>
+      <span id="dk-what2"></span>
+      <span class="sp"></span>
+      <button id="dk-stop" type="button" disabled>stop</button>
+    </div>
+    <div id="dk-bar"><i></i></div>
+    <div class="row" id="dk-presets">
+      <button data-min="25" type="button">25m</button>
+      <button data-min="50" type="button">50m</button>
+      <button data-min="60" type="button" class="pri">1h</button>
+      <button data-min="90" type="button">90m</button>
+      <input id="dk-label" placeholder="what for">
+    </div>
+  </section>
+
+  <section>
+    <div class="row"><span class="lbl">Next</span><span id="dk-next">nothing scheduled</span></div>
+    <ul id="dk-list"></ul>
+    <div class="row">
+      <input id="dk-add-at" type="time" value="09:00" title="start time">
+      <input id="dk-add-min" type="number" min="1" max="600" value="60" title="minutes">
+      <input id="dk-add-what" placeholder="label">
+      <button id="dk-add" type="button">add</button>
+    </div>
+  </section>
+</div>
+<!-- Local models. Rows render from /api/models (a live Ollama proxy — nothing is
+     cached, the panel answers "now"). unload/warm only; install and delete stay
+     in the terminal, see lib/models.mjs. -->
+<div id="models">
+  <h3>Models <span id="md-count">—</span><span class="sp"></span>
+    <button id="modelsclose" type="button">hide</button></h3>
+  <div id="md-gpu">
+    <div id="md-bar"><i></i></div>
+    <div id="md-vram">—</div>
+  </div>
+  <ul id="md-list"></ul>
+  <div id="md-note"></div>
+</div>
+
+<!-- The roadmap. Everything inside #rd-list is rendered from data/roadmap.json via
+     /api/roadmap, so a phase is added by editing that file, not this one. -->
+<div id="road">
+  <h3>Roadmap <span id="rd-pct">—</span><span class="sp"></span>
+    <button id="roadclose" type="button">hide</button></h3>
+  <div id="rd-top">
+    <div id="rd-bar"><i></i></div>
+    <div id="rd-budget">—</div>
+  </div>
+  <ul id="rd-list"></ul>
+  <div id="rd-lock">—</div>
+  <div id="rd-src"></div>
+</div>
+
+<!-- The instructions screen. Filled from the clicked item's `brief` in
+     data/roadmap.json — add a brief there, not markup here. -->
+<div id="brief">
+  <div id="brief-card">
+    <div id="brief-head">
+      <span id="brief-kind">topic</span>
+      <div style="flex:1">
+        <div id="brief-phase"></div>
+        <div id="brief-title"></div>
+      </div>
+      <button id="brief-close" type="button">close</button>
+    </div>
+    <div id="brief-mark">
+      <div id="brief-score"></div>
+      <div id="brief-fb"></div>
+      <div id="brief-when"></div>
+    </div>
+    <section><h4>What this is</h4><p id="brief-what"></p></section>
+    <section><h4>How to do it</h4><ol id="brief-steps"></ol></section>
+    <section class="done"><h4>Done when</h4><ul id="brief-done"></ul></section>
+    <section class="scored"><h4>How it gets scored</h4><ul id="brief-scored"></ul></section>
+    <div class="rd-links" id="brief-links"></div>
+    <div id="brief-how"></div>
+  </div>
+</div>
+
+<div id="chron">
+  <header>
+    <span class="ttl">Chronicle</span>
+    <span id="ch-counts">—</span>
+    <span class="sp"></span>
+    <span id="ch-focus"></span>
+    <span class="sp"></span>
+    <span class="rng" id="ch-range"></span>
+    <button id="chronclose" type="button">hide</button>
+  </header>
+  <div id="ch-wrap"><canvas id="chcv"></canvas></div>
+</div>
+
+<!-- The pad. One textarea over the whole stage — the desk's notes box is a sticky
+     note; this is the notebook page. The text lives in a real file
+     (C:\AI\Notes\scratchpad.md, via /api/scratchpad), never in GUI state. -->
+<div id="pad">
+  <div class="col">
+    <header>
+      <span class="ttl">Pad</span>
+      <span id="pad-file">—</span>
+      <span class="sp"></span>
+      <span id="pad-count"></span>
+      <span id="pad-saved">—</span>
+      <button id="padclose" type="button">close</button>
+    </header>
+    <textarea id="pad-ta" spellcheck="false"
+      placeholder="paste anything — autosaves to C:\AI\Notes\scratchpad.md as you type"></textarea>
+  </div>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<!-- The renderer lives in app.js, not inline: inline <script> is invisible to the
+     code graph, which made every question about it cost a full-file read. -->
+<script type="module" src="/app.js"></script>
+</body>
+</html>

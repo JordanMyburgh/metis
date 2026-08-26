@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="150" viewBox="0 0 720 150" role="img" aria-label="METIS">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7d968"/>
+      <stop offset="0.55" stop-color="#e3b62a"/>
+      <stop offset="1" stop-color="#a97b10"/>
+    </linearGradient>
+  </defs>
+  <text x="360" y="104" text-anchor="middle"
+        font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="96" font-weight="800" letter-spacing="16"
+        fill="url(#gold)">METIS</text>
+</svg>

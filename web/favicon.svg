@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="46%" r="54%">
+      <stop offset="0%" stop-color="#22ccff" stop-opacity=".22"/>
+      <stop offset="55%" stop-color="#22ccff" stop-opacity=".06"/>
+      <stop offset="100%" stop-color="#22ccff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="38%" cy="32%" r="76%">
+      <stop offset="0%" stop-color="#d4f4ff"/>
+      <stop offset="42%" stop-color="#22ccff"/>
+      <stop offset="100%" stop-color="#0a7ba8"/>
+    </radialGradient>
+    <filter id="soft" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" ry="96" fill="#050508"/>
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#glow)"/>
+  <g stroke="#7ba0d2" stroke-opacity=".30" stroke-width="3.50" stroke-linecap="round">
+      <line x1="256" y1="256" x2="304.0" y2="148.2"/>
+      <line x1="256" y1="256" x2="325.4" y2="351.5"/>
+      <line x1="256" y1="256" x2="138.6" y2="268.3"/>
+      <line x1="304.0" y1="148.2" x2="325.4" y2="351.5" stroke-opacity=".16"/>
+      <line x1="325.4" y1="351.5" x2="138.6" y2="268.3" stroke-opacity=".16"/>
+  </g>
+  <g>
+      <circle cx="304.0" cy="148.2" r="102.6" fill="#b888ff" opacity=".17" filter="url(#soft)"/>
+      <circle cx="325.4" cy="351.5" r="102.6" fill="#f2b85c" opacity=".17" filter="url(#soft)"/>
+      <circle cx="138.6" cy="268.3" r="102.6" fill="#54e6a6" opacity=".17" filter="url(#soft)"/>
+  </g>
+  <circle cx="256" cy="256" r="165.6" fill="#22ccff" opacity=".22" filter="url(#soft)"/>
+  <g>
+      <circle cx="304.0" cy="148.2" r="54.0" fill="#b888ff"/>
+      <circle cx="325.4" cy="351.5" r="54.0" fill="#f2b85c"/>
+      <circle cx="138.6" cy="268.3" r="54.0" fill="#54e6a6"/>
+  </g>
+  <circle cx="256" cy="256" r="72.0" fill="url(#core)"/>
+  <circle cx="256" cy="256" r="85.0" fill="none" stroke="#22ccff" stroke-opacity=".42" stroke-width="2.50"/>
+</svg>
